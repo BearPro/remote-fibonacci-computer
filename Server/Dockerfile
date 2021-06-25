@@ -1,19 +1,13 @@
-FROM mcr.microsoft.com/dotnet/aspnet:5.0 AS base
-WORKDIR /app
-EXPOSE 5000
-
-FROM mcr.microsoft.com/dotnet/sdk:5.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:5.0 as publish
 WORKDIR /src
 COPY . .
-
-WORKDIR "/src/CloudLight"
-FROM build AS publish
-ARG BUILD_VERSION=1.0.1.0
+WORKDIR /src/Server
 RUN dotnet restore
-RUN dotnet publish --no-restore -c Release -o /app/publish -p:Version=$BUILD_VERSION
+RUN dotnet publish --no-restore -c Release -o /app/publish
 
-FROM base AS final
+FROM mcr.microsoft.com/dotnet/aspnet:5.0
 WORKDIR /app
+EXPOSE 5000
 COPY --from=publish /app/publish .
 RUN mkdir /app/AppData
-ENTRYPOINT ["dotnet", "CloudLight.dll"]
+ENTRYPOINT ["dotnet", "Server.dll"]
