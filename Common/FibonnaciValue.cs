@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace MqMessages
+namespace Common
 {
     /// <summary>
     /// Представляет результат вычисления числа Фибоначчи под номер n.

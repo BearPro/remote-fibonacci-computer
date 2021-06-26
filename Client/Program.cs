@@ -5,17 +5,17 @@ using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
 using EasyNetQ;
-using MqMessages;
+using Common;
+using System.Net.Http.Json;
 
 namespace Client
 {
-    class Fibonacci
+    class FibonacciReciever
     {
         private LinkedList<(int n, TaskCompletionSource<FibonnaciValue> tcs)> pendingRequests = new();
 
         public void Recieve(FibonnaciValue result)
         {
-            // Console.WriteLine($"Recieved fib({result.n}) -> {result.value}");
             var (n, tcs) = pendingRequests.FirstOrDefault(x => x.n == result.n);
             if (tcs != null)
             {
@@ -23,17 +23,18 @@ namespace Client
             }
             else
             {
-                System.Console.WriteLine($"Unexpected result for n={result.n}");
+                Console.WriteLine($"Unexpected result for n={result.n}");
             }
 
         }
 
-        public async Task<int> Request(int n)
+        public async Task<FibonnaciValue> RequestNext(FibonnaciValue current)
         {
-            var request = new HttpRequestMessage(HttpMethod.Post, $"fibonacci?n={n}");
-            
+            var content = JsonContent.Create(current);
+            var request = new HttpRequestMessage(HttpMethod.Post, "fibonacci") { Content = content };
+
             var tcs = new TaskCompletionSource<FibonnaciValue>();
-            pendingRequests.AddLast((n, tcs));
+            pendingRequests.AddLast((current.n + 1, tcs));
 
             var uri = new Uri("http://localhost:5000");
             using var client = new HttpClient() { BaseAddress = uri };
@@ -44,10 +45,8 @@ namespace Client
                 throw new Exception($"Unexpected status code {response.StatusCode}");
             }
             
-            // Console.WriteLine(await response.Content.ReadAsStringAsync());
-
             var result = await tcs.Task;
-            return result.value;
+            return result;
         }
     }
 
@@ -55,17 +54,29 @@ namespace Client
     {
         static async Task Main(string[] args)
         {
+            var reciever = new FibonacciReciever();
+            var computer = new FibonacciComputerService();
+
             using var bus = RabbitHutch.CreateBus("host=localhost;username=guest;password=guest");
-            
-            var fib = new Fibonacci();
-            
-            bus.PubSub.Subscribe<FibonnaciValue>("fibbonachy_values", fib.Recieve);
-            
-            var task1 = fib.Request(10);
-            var task2 = fib.Request(20);
-            await Task.WhenAll(task1, task2);
-            Console.WriteLine($"fib(10) = {task1.Result}, fib(20) = {task2.Result}");
+            bus.PubSub.Subscribe<FibonnaciValue>("fibbonachy_values", reciever.Recieve);
+
+            await Run(reciever, computer);
+
             Console.WriteLine("All done");
+        }
+
+        static async Task Run(FibonacciReciever reciever, FibonacciComputerService computer)
+        {
+            var value = new FibonnaciValue(1, 1);
+
+            while (value.value > 0)
+            {
+                value = await reciever.RequestNext(value);
+                Console.WriteLine($"Remote: fib({value.n}) = {value.value}");
+                value = computer.ComputeNext(value);
+                Console.WriteLine($"Local: fib({value.n}) = {value.value}");
+                // await Task.Delay(500);
+            }
         }
     }
 }

@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using EasyNetQ;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
-using MqMessages;
+using Common;
 
 namespace Server.Controllers
 {
@@ -13,40 +13,34 @@ namespace Server.Controllers
     [Route("[controller]")]
     public class FibonacciController : ControllerBase
     {
-        private readonly ILogger<FibonacciController> log;
+        private readonly ILogger<FibonacciController> logger;
         private readonly IBus bus;
+        private readonly FibonacciComputerService fibonacciComputer;
 
-        public FibonacciController(ILogger<FibonacciController> logger, IBus bus)
+        public FibonacciController(
+            ILogger<FibonacciController> logger, 
+            IBus bus, 
+            FibonacciComputerService fibonacciComputer)
         {
-            log = logger;
+            this.logger = logger;
             this.bus = bus;
+            this.fibonacciComputer = fibonacciComputer;
         }
-
-        [HttpGet]
-        public IActionResult Get()
-        {
-            return StatusCode(500, "Client must do POST request.");
-        }
-        
-        public int NaiveFib(int n) => n switch {
-            0 => 0,
-            1 => 1,
-            _ => NaiveFib(n-2) + NaiveFib(n-1)
-        };
 
         [HttpPost]
-        public IActionResult Post([FromQuery] int n)
+        public IActionResult Post(FibonnaciValue current)
         {
             var calculationTask = Task.Run(() => {
-                var value = NaiveFib(n);
-                var msg = new FibonnaciValue(n, value);
-                log.LogInformation($"Sending fib({n}) -> {value}");
-                bus.PubSub.PublishAsync(msg);
+                var next = fibonacciComputer.ComputeNext(current);
+
+                logger.LogInformation($"Sending fib({next.n}) -> {next.value}");
+                
+                bus.PubSub.PublishAsync(next);
             });
-            calculationTask.ConfigureAwait(false);
             
-            var msg = $"Requested fib({n})";
-            log.LogInformation(msg);
+            calculationTask.ConfigureAwait(false);
+            var msg = $"Requested fib({current.n + 1})";
+            logger.LogInformation(msg);
             return StatusCode(200, msg);
         }
     }
