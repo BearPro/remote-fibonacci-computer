@@ -8,5 +8,5 @@ namespace Common
     /// <remarks>
     /// Параметр передаётся для сопоставления ответа с запросом.
     /// </remarks>
-    public record FibonnaciValue(int n, int value);
+    public record FibonnaciValue(Guid id, int n, int value);
 }

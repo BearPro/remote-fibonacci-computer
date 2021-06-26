@@ -15,12 +15,12 @@ namespace Server.Controllers
     {
         private readonly ILogger<FibonacciController> logger;
         private readonly IBus bus;
-        private readonly FibonacciComputerService fibonacciComputer;
+        private readonly FibonacciComputer fibonacciComputer;
 
         public FibonacciController(
             ILogger<FibonacciController> logger, 
             IBus bus, 
-            FibonacciComputerService fibonacciComputer)
+            FibonacciComputer fibonacciComputer)
         {
             this.logger = logger;
             this.bus = bus;
@@ -32,14 +32,12 @@ namespace Server.Controllers
         {
             var calculationTask = Task.Run(() => {
                 var next = fibonacciComputer.ComputeNext(current);
-
-                logger.LogInformation($"Sending fib({next.n}) -> {next.value}");
-                
-                bus.PubSub.PublishAsync(next);
+                logger.LogInformation($"Sending fib({next.n}) -> {next.value}, id = {current.id}");
+                return bus.PubSub.PublishAsync(next);
             });
             
             calculationTask.ConfigureAwait(false);
-            var msg = $"Requested fib({current.n + 1})";
+            var msg = $"Requested fib({current.n + 1}), id = {current.id}";
             logger.LogInformation(msg);
             return StatusCode(200, msg);
         }

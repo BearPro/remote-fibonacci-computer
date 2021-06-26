@@ -3,11 +3,11 @@ using System.Collections.Concurrent;
 
 namespace Common
 {
-    public class FibonacciComputerService
+    public class FibonacciComputer
     {
         private ConcurrentDictionary<int, int> cashedResults = new();
 
-        public FibonacciComputerService()
+        public FibonacciComputer()
         {
             cashedResults[0] = 0;
             cashedResults[1] = 1;
@@ -23,17 +23,17 @@ namespace Common
             Set(current);
             if (cashedResults.TryGetValue(current.n + 1, out var next))
             {
-                return new FibonnaciValue(current.n + 1, next);
+                return new FibonnaciValue(current.id, current.n + 1, next);
             }
             else if (cashedResults.TryGetValue(current.n - 1, out var prev))
             {
                 var nextValue = prev + current.value;
                 cashedResults.AddOrUpdate(current.n + 1, nextValue, (k, v) => v);
-                return new FibonnaciValue(current.n + 1, nextValue);
+                return new FibonnaciValue(current.id, current.n + 1, nextValue);
             }
             else
             {
-                throw new InvalidOperationException("Invalid FibonacciComputerService state!");
+                throw new InvalidOperationException($"Invalid {nameof(FibonacciComputer)} state for '{current}'!");
             }
         }
     }

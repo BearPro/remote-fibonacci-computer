@@ -7,76 +7,142 @@ using System.Threading.Tasks;
 using EasyNetQ;
 using Common;
 using System.Net.Http.Json;
+using System.Threading;
+using System.Collections.Concurrent;
+using System.Diagnostics;
 
 namespace Client
 {
-    class FibonacciReciever
+    /// <summary>
+    /// Need to quickly disable all debug WriteLine statements.
+    /// </summary>
+    class Log
     {
-        private LinkedList<(int n, TaskCompletionSource<FibonnaciValue> tcs)> pendingRequests = new();
+        public static void Debug(string s)
+        {
+            //Console.WriteLine(s);
+        }
+
+        public static void Info(string s)
+        {
+            Console.WriteLine(s);
+        }
+    }
+
+    class RemoteFibonacciComputer
+    {
+        private readonly ConcurrentDictionary<Guid, TaskCompletionSource<FibonnaciValue>> pendingRequests = new();
+        
+        private readonly HttpClient client = new HttpClient() { 
+            BaseAddress = new Uri("http://localhost:5000") 
+        };
 
         public void Recieve(FibonnaciValue result)
         {
-            var (n, tcs) = pendingRequests.FirstOrDefault(x => x.n == result.n);
-            if (tcs != null)
+            if (pendingRequests.TryRemove(result.id, out var tcs))
             {
+                Log.Debug($"Receiving {result}");
                 tcs.SetResult(result);
             }
             else
             {
-                Console.WriteLine($"Unexpected result for n={result.n}");
+                // Just discard unexpected message.
+                Log.Debug($"Discarding unexpected {result}");
             }
-
         }
 
-        public async Task<FibonnaciValue> RequestNext(FibonnaciValue current)
+        public Task<FibonnaciValue> RequestNext(FibonnaciValue current) => 
+            RequestNext(current, CancellationToken.None);
+
+        public async Task<FibonnaciValue> RequestNext(
+            FibonnaciValue current, CancellationToken cancel)
         {
-            var content = JsonContent.Create(current);
-            var request = new HttpRequestMessage(HttpMethod.Post, "fibonacci") { Content = content };
+            var request = new HttpRequestMessage(HttpMethod.Post, "fibonacci") 
+            { 
+                Content = JsonContent.Create(current)
+            };
 
-            var tcs = new TaskCompletionSource<FibonnaciValue>();
-            pendingRequests.AddLast((current.n + 1, tcs));
-
-            var uri = new Uri("http://localhost:5000");
-            using var client = new HttpClient() { BaseAddress = uri };
-            var response = await client.SendAsync(request);
-
-            if (response.StatusCode != HttpStatusCode.OK)
-            {
-                throw new Exception($"Unexpected status code {response.StatusCode}");
-            }
+            var tcs = new TaskCompletionSource<FibonnaciValue>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
             
-            var result = await tcs.Task;
-            return result;
+            cancel.Register(() => tcs.TrySetCanceled(cancel));
+
+            if (pendingRequests.TryAdd(current.id, tcs))
+            {
+                var response = await client.SendAsync(request);
+
+                if (response.StatusCode != HttpStatusCode.OK)
+                    throw new Exception($"Unexpected status code {response.StatusCode}");
+
+                var result = await tcs.Task;
+                return result;
+            }
+            else
+            {
+                throw new Exception($"Can't add tcs for {(current.id, current.n)}");
+            }
         }
     }
 
     class Program
     {
+        const bool stopOnOverflow = true;
+
         static async Task Main(string[] args)
         {
-            var reciever = new FibonacciReciever();
-            var computer = new FibonacciComputerService();
+            var parrallelCalculationsCount = Convert.ToInt32(args[0]);
+
+            var remoteFib = new RemoteFibonacciComputer();
+            var localFib = new FibonacciComputer();
+
+            // Different subscription ID's for different processes needed because of RabbitMQ
+            // distributes queue consumers with equal ID's. For calculation algorithm needs, copy
+            // of each message need to be received by each app instance.
+            var subscriptionId = $"fib_{Environment.ProcessId}_{Environment.MachineName}";
 
             using var bus = RabbitHutch.CreateBus("host=localhost;username=guest;password=guest");
-            bus.PubSub.Subscribe<FibonnaciValue>("fibbonachy_values", reciever.Recieve);
+            await bus.PubSub.SubscribeAsync<FibonnaciValue>(subscriptionId, remoteFib.Recieve);
 
-            await Run(reciever, computer);
+            var stopwatch = new Stopwatch();
+            stopwatch.Start();
+            
+            var tasks = Enumerable
+                .Range(0, parrallelCalculationsCount)
+                // Actually, running task int thread pool is not necessary here, because 
+                // most execution time spend on awaiting single network connection, so scheduling
+                // tasks in thread pool introduces cost without profit.
+                .Select(jobNumber => Task.Run(() => Run(jobNumber, remoteFib, localFib)))
+                .ToArray();
 
-            Console.WriteLine("All done");
+            await Task.WhenAll(tasks);
+            stopwatch.Stop();
+
+            Log.Info($"All done in {stopwatch.Elapsed}");
         }
 
-        static async Task Run(FibonacciReciever reciever, FibonacciComputerService computer)
+        static async Task Run(int jobNumber, RemoteFibonacciComputer remoteFib, FibonacciComputer localFib)
         {
-            var value = new FibonnaciValue(1, 1);
+            Log.Info($"Job {jobNumber} strted in thread {Thread.CurrentThread.ManagedThreadId}");
+            var value = new FibonnaciValue(Guid.NewGuid(), 1, 1);
 
-            while (value.value > 0)
+            while (!stopOnOverflow || !(stopOnOverflow && value.value < 0))
             {
-                value = await reciever.RequestNext(value);
-                Console.WriteLine($"Remote: fib({value.n}) = {value.value}");
-                value = computer.ComputeNext(value);
-                Console.WriteLine($"Local: fib({value.n}) = {value.value}");
-                // await Task.Delay(500);
+                try
+                {
+                    var tcs = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    value = await remoteFib.RequestNext(value, tcs.Token);
+                }
+                catch (Exception e)
+                {
+                    // Manually dropping stack to compact output.
+                    throw e;
+                }
+                Log.Debug($"{jobNumber} - Remote: fib({value.n}) = {value.value}");
+                value = localFib.ComputeNext(value);
+                Log.Debug($"{jobNumber} - Local: fib({value.n}) = {value.value}");
+                value = value with { id = Guid.NewGuid() };
             }
+            Log.Info($"Job {jobNumber} finished in thread {Thread.CurrentThread.ManagedThreadId}");
         }
     }
 }
