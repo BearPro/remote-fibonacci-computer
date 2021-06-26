@@ -26,7 +26,7 @@ namespace Server
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            services.RegisterEasyNetQ("host=localhost;username=guset;password=guest");
+            services.RegisterEasyNetQ("host=localhost;username=guest;password=guest");
             services.AddControllers();
             services.AddSwaggerGen(c =>
             {
