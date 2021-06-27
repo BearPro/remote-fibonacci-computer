@@ -9,6 +9,9 @@ using System.Collections.Concurrent;
 
 namespace Client
 {
+    /// <summary>
+    /// Provides methods for computing next Fibonacci sequence number using remote app.
+    /// </summary>
     class RemoteFibonacciComputer
     {
         private readonly ConcurrentDictionary<Guid, TaskCompletionSource<FibonnaciValue>> pendingRequests = new();
@@ -17,6 +20,9 @@ namespace Client
             BaseAddress = new Uri("http://localhost:5000") 
         };
 
+        /// <summary>
+        /// Used as callback for rabbitmq messages.
+        /// </summary>
         public void Recieve(FibonnaciValue result)
         {
             if (pendingRequests.TryRemove(result.id, out var tcs))
@@ -34,6 +40,13 @@ namespace Client
         public Task<FibonnaciValue> RequestNext(FibonnaciValue current) => 
             RequestNext(current, CancellationToken.None);
 
+        /// <summary>
+        /// Starts task for requesting next Fibonacci number from app 2 (Server) by http and 
+        /// waiting for this number transfered by rabbitmq.
+        /// </summary>
+        /// <param name="current">Current</param>
+        /// <param name="cancel">Cancellation token</param>
+        /// <returns>Task representing this operations</returns>
         public async Task<FibonnaciValue> RequestNext(
             FibonnaciValue current, CancellationToken cancel)
         {

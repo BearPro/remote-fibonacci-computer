@@ -12,8 +12,6 @@ namespace Client
 
     class Program
     {
-        const bool stopOnOverflow = true;
-
         static async Task Main(string[] args)
         {
             var parrallelCalculationsCount = Convert.ToInt32(args[0]);
@@ -46,29 +44,35 @@ namespace Client
             Log.Info($"All done in {stopwatch.Elapsed}");
         }
 
+        /// <summary>
+        /// Launches infinite computation of Fibonacci sequence.
+        /// </summary>
+        /// <param name="jobNumber">Id of job. Used for logging.</param>
+        /// <param name="remoteFib">Remote Fibonacci computer object.</param>
+        /// <param name="localFib">Local Fibonacci computer object.</param>
+        /// <returns>task representing infinite computation of Fibonacci sequence</returns>
         static async Task Run(int jobNumber, RemoteFibonacciComputer remoteFib, FibonacciComputer localFib)
         {
-            Log.Info($"Job {jobNumber} strted in thread {Thread.CurrentThread.ManagedThreadId}");
             var value = new FibonnaciValue(Guid.NewGuid(), 1, 1);
 
-            while (!stopOnOverflow || !(stopOnOverflow && value.value < 0))
+            while (true)
             {
                 try
                 {
                     var tcs = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                     value = await remoteFib.RequestNext(value, tcs.Token);
                 }
-                catch (Exception e)
+                catch (TaskCanceledException e)
                 {
-                    // Manually dropping stack to compact output.
+                    #pragma warning disable CA2200 // Rethrow to preserve stack details (for compacting output)
                     throw e;
+                    #pragma warning restore CA2200 // Rethrow to preserve stack details
                 }
                 Log.Debug($"{jobNumber} - Remote: fib({value.n}) = {value.value}");
                 value = localFib.ComputeNext(value);
                 Log.Debug($"{jobNumber} - Local: fib({value.n}) = {value.value}");
                 value = value with { id = Guid.NewGuid() };
             }
-            Log.Info($"Job {jobNumber} finished in thread {Thread.CurrentThread.ManagedThreadId}");
         }
     }
 }

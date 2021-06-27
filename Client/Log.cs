@@ -9,6 +9,7 @@ namespace Client
     {
         public static void Debug(string s)
         {
+            // Output disabled for performance reasons.
             //Console.WriteLine(s);
         }
 

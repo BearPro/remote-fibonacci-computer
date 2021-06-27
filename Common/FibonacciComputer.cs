@@ -3,6 +3,9 @@ using System.Collections.Concurrent;
 
 namespace Common
 {
+    /// <summary>
+    /// Represent algorithm of computing next Fibonacci number.
+    /// </summary>
     public class FibonacciComputer
     {
         private ConcurrentDictionary<int, int> cashedResults = new();
@@ -13,14 +16,15 @@ namespace Common
             cashedResults[1] = 1;
         }
 
-        private void Set(FibonnaciValue value)
-        {
-            cashedResults.AddOrUpdate(value.n, value.value, (k, v) => v);
-        }
-
+        /// <summary>
+        /// Computes next Fibonacci number by sum <paramref name="current"/> with previous number.
+        /// </summary>
+        /// <param name="current"></param>
+        /// <returns>Next Fibonacci number</returns>
         public FibonnaciValue ComputeNext(FibonnaciValue current)
         {
-            Set(current);
+            cashedResults.AddOrUpdate(current.n, current.value, (k, v) => v);
+
             if (cashedResults.TryGetValue(current.n + 1, out var next))
             {
                 return new FibonnaciValue(current.id, current.n + 1, next);
