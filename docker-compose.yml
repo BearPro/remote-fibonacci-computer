@@ -1,0 +1,32 @@
+version: '3.4'
+
+services: 
+    rabbitmq:
+        build: RabbitMq/.
+        ports: 
+            - "5672:5672"
+            - "15672:15672"
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:15672"]
+            interval: 10s
+            timeout: 10s
+            retries: 5
+        networks: 
+            - server-redis
+
+    server:
+        container_name: server
+        build: 
+            dockerfile: ./Server/Dockerfile
+            context: "."
+        ports: 
+            - "5000:80"
+        depends_on:
+            rabbitmq:
+                condition: service_healthy
+        networks: 
+            - server-redis
+
+networks: 
+    server-redis:
+        driver: bridge

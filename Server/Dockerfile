@@ -7,7 +7,7 @@ RUN dotnet publish --no-restore -c Release -o /app/publish
 
 FROM mcr.microsoft.com/dotnet/aspnet:5.0
 WORKDIR /app
-EXPOSE 5000
+EXPOSE 80
 COPY --from=publish /app/publish .
 RUN mkdir /app/AppData
 ENTRYPOINT ["dotnet", "Server.dll"]
